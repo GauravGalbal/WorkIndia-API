@@ -8,9 +8,10 @@ app.use(cookieParser());
 
 const auth = (req, res, next) => {
     try{
-        const token = req.headers.cookie.split('=')[1];
+        const token = req.headers['authorization'].split(' ')[1];
+        console.log(req.headers['authorization'])
         const verifyUser = jwt.verify(token, process.env.JWT_KEY);
-        req.account = verifyUser.account_no;
+        // req.account = verifyUser.account_no;
         next();
     }catch(err){
         console.log(err);
