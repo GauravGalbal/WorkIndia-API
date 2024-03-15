@@ -7,7 +7,7 @@ const jwt = require('jsonwebtoken');
 
 const auth = require('./authRoute')
 var { db } = require('../Database/Connection');
-
+const apiKeyCheck = require('./apiKeyRoute')
 
 const generateaccount = (req) => {
     const currentTime = new Date();
@@ -17,6 +17,16 @@ const generateaccount = (req) => {
     const randomDigits = Math.floor(Math.random() * 10000).toString().padStart(5, '0');
 
     return `${hours}${minutes}${seconds}${randomDigits}`;
+}
+
+function generateNumberRange(startingNumber, range) {
+    const result = []
+
+    for (let i = 0; i < range; i++) {
+        result.push(startingNumber - i);
+    }
+
+    return result;
 }
 
 
@@ -75,7 +85,7 @@ router.post('/login', async (req, res) => {
 
                 if (password === req.body.password) {
                     const token = jwt.sign({ username: user[0].username }, process.env.JWT_KEY, {
-                        expiresIn: "2 minutes"
+                        expiresIn: "10 minutes"
                     })
 
                     res.cookie('jwt', token, {
@@ -97,6 +107,141 @@ router.post('/login', async (req, res) => {
     }
 })
 
+
+router.post('/trains/create', apiKeyCheck, async (req, res) => {
+    try {
+        const train_id = generateaccount(req);
+        const table = process.env.SQL_TRAIN_TABLE;
+
+        const trainData = {
+            train_id: train_id,
+            train_name: req.body.train_name,
+            train_source: req.body.source,
+            train_destination: req.body.destination,
+            seat_capacity: req.body.seat_capacity,
+            arrival_time_at_source: req.body.arrival_time_at_source,
+            arrival_time_at_destination: req.body.arrival_time_at_destination,
+            available_seats: req.body.seat_capacity
+        }
+
+        var query = `INSERT INTO ${table} SET ?`;
+
+        db.query(query, trainData, async (error, results) => {
+            if (error) throw error;
+
+            res.status(200).json({
+                "message": "Train added successfully",
+                "train_id": train_id
+            })
+        });
+
+    } catch (err) {
+        console.log(err);
+        res.status(401).send('error in trains/create');
+    }
+})
+
+
+router.get('/trains/availability', async (req, res) => {
+    try {
+        const table = process.env.SQL_TRAIN_TABLE;
+        const source = req.query.source
+        const destination = req.query.destination
+
+        var query = `select train_id, train_name, available_seats from ${table} where (train_source = '${source}' and train_destination = '${destination}')`;
+        var resData = []
+
+        db.query(query, async (error, train) => {
+            if (error) throw error;
+            else if (train.length === 0) {
+                console.log('No data found');
+                res.status(401).json('no data found');
+            }
+            else {
+                for (const item in train) {
+                    resData.push({
+                        train_id: item.train_id,
+                        train_name: item.train_name,
+                        available_seats: item.available_seats
+                    })
+                }
+
+                res.status(200).json(train)
+            }
+        })
+    } catch (err) {
+        console.log(err);
+        res.status(401).send('error in trains/availability');
+    }
+})
+
+
+router.post('/trains/:train_id/book', auth, async (req, res) => {
+    try {
+        const train_id = req.params.train_id
+        const book_table = process.env.SQL_TRAIN_BOOK_TABLE;
+        const train_table = process.env.SQL_TRAIN_TABLE;
+
+
+        var query = `select * from ${train_table} where train_id = '${train_id}'`;
+
+        db.query(query, async (error, trains) => {
+            if (error) throw error;
+
+            if (trains.length == 0) {
+                res.status(404).json('No data found')
+            }
+
+            const train = trains[0]
+            const book_id = generateaccount()
+
+            if (train.available_seats >= req.body.no_of_seats) {
+                const seats = generateNumberRange(train.available_seats, req.body.no_of_seats)
+
+                console.log(seats.toString())
+
+                const bookData = {
+                    booking_id: book_id,
+                    train_id: train.train_id,
+                    train_name: train.train_name,
+                    user_id: req.body.user_id,
+                    no_of_seats: req.body.no_of_seats,
+                    seat_numbers: `[${seats.toString()}]`,
+                    arrival_time_at_source: train.arrival_time_at_source,
+                    arrival_time_at_destination: train.arrival_time_at_destination
+                }
+
+                console.log(bookData)
+
+                query = `INSERT INTO ${book_table} SET ?`;
+                var available_seats = train.available_seats - req.body.no_of_seats
+
+                db.query(query, bookData, async (error, result) => {
+                    if (error) throw error;
+
+                    query = `UPDATE ${train_table} SET available_seats = ${available_seats} where train_id = ${train.train_id}`
+
+                    db.query(query, async (error, results) => {
+                        if (error) throw error;
+                        
+                        res.status(200).json({
+                            "message": "Seat booked successfully",
+                            "booking_id": result.booking_id,
+                            "seat_numbers": seats
+                        })
+                    })
+                });
+
+            } else {
+                res.status(404).json('No Seats Available')
+            }
+        });
+
+    } catch (err) {
+        console.log(err);
+        res.status(401).send('error in trains/create');
+    }
+})
 
 
 
