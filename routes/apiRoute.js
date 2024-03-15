@@ -244,6 +244,32 @@ router.post('/trains/:train_id/book', auth, async (req, res) => {
 })
 
 
+router.get('/bookings/:booking_id', auth, async (req, res) => {
+    try {
+        const book_table = process.env.SQL_TRAIN_BOOK_TABLE;
+        const book_id = req.params.booking_id
+
+        var query = `select * from ${book_table} where booking_id = '${book_id}'`
+
+        db.query(query, async (error, book) => {
+            if (error) throw error;
+            else if (book.length === 0) {
+                console.log('No data found');
+                res.status(401).json('no data found');
+            }
+            else {
+                res.status(200).json(book)
+            }
+        })
+
+        
+    } catch (err) {
+        console.log(err);
+        res.status(401).send('error in trains/availability');
+    }
+})
+
+
 
 
 module.exports = router
